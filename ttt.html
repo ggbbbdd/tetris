@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <title>김진수의 테트리스</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      overscroll-behavior: none;
+      touch-action: manipulation;
+      background: linear-gradient(135deg, #0f2027, #203a43, #2c5364);
+      color: white;
+      font-family: sans-serif;
+      text-align: center;
+    }
+    canvas {
+      display: block;
+      margin: 30px auto 10px;
+      border: 4px solid #00ffe0;
+      box-shadow: 0 0 20px #00ffe0;
+      background: #000;
+    }
+    #info {
+      text-align: center;
+      font-size: 1.2em;
+    }
+    #info div {
+      margin: 8px;
+      color: #00ffe0;
+      text-shadow: 0 0 6px #00ffe0;
+    }
+    #start-screen {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: rgba(0,0,0,0.9);
+      color: white;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 10;
+    }
+    #start-screen h1 {
+      font-size: 2.5em;
+      color: #00ffe0;
+      text-shadow: 0 0 10px #00ffe0, 0 0 20px #00ffe0;
+      margin-bottom: 30px;
+    }
+    button {
+      padding: 12px 30px;
+      font-size: 1.2em;
+      background-color: #00ffe0;
+      border: none;
+      border-radius: 10px;
+      color: black;
+      cursor: pointer;
+      box-shadow: 0 0 15px #00ffe0;
+      margin: 10px;
+    }
+    button:hover {
+      background-color: #00c9b7;
+      box-shadow: 0 0 25px #00ffe0;
+    }
+    #touch-controls {
+      display: flex;
+      justify-content: center;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      margin: 20px auto;
+    }
+    .touch-row {
+      display: flex;
+      justify-content: center;
+      gap: 15px;
+    }
+    .touch-btn {
+      width: 60px;
+      height: 60px;
+      font-size: 1.8em;
+      border-radius: 50%;
+      border: 2px solid #00ffe0;
+      background: rgba(255,255,255,0.05);
+      color: white;
+      box-shadow: 0 0 8px #00ffe0;
+      transition: all 0.1s ease;
+    }
+    .touch-btn:active {
+      background: #00ffe0;
+      color: black;
+      box-shadow: 0 0 16px #00ffe0;
+    }
+  </style>
+</head>
+
+<body tabindex="0" onload="document.body.focus()">
+
+<div id="start-screen">
+  <h1>김진수가 만든 테트리스</h1>
+  <button onclick="startGame()">게임 시작</button>
+</div>
+
+<canvas id="can" width="300" height="600"></canvas>
+
+<div id="info">
+  <div id="score">SCORE: 0</div>
+  <div id="level">LEVEL: 1</div>
+  <div id="record">BEST: 0</div>
+  <button onclick="restartGame()">다시 시작</button>
+</div>
+
+<div id="touch-controls">
+  <div class="touch-row">
+    <button class="touch-btn" onclick="moveUp()">🔼</button>
+  </div>
+  <div class="touch-row">
+    <button class="touch-btn" onclick="moveLeft()">◀️</button>
+    <button class="touch-btn" onclick="rotate()">🔁</button>
+    <button class="touch-btn" onclick="moveRight()">▶️</button>
+  </div>
+  <div class="touch-row">
+    <button class="touch-btn" onclick="moveDown()">🔽</button>
+  </div>
+</div>
+
+<script>
+let GAME_SPEED = 600;
+const SPEED_STEP = 10;
+const COLS = 10, ROWS = 20, BLOCK = 30;
+const TETRO_SIZE = 4;
+const COLORS = ["#000", "#6CF", "#F92", "#66F", "#C5C", "#FD2", "#F44", "#5B5"];
+const TYPES = [
+  [],
+  [[0,0,0,0],[1,1,1,1],[0,0,0,0],[0,0,0,0]],
+  [[0,1,0,0],[0,1,0,0],[0,1,1,0],[0,0,0,0]],
+  [[0,0,1,0],[0,0,1,0],[0,1,1,0],[0,0,0,0]],
+  [[0,1,0,0],[0,1,1,0],[0,1,0,0],[0,0,0,0]],
+  [[0,0,0,0],[0,1,1,0],[0,1,1,0],[0,0,0,0]],
+  [[0,0,0,0],[1,1,0,0],[0,1,1,0],[0,0,0,0]],
+  [[0,0,0,0],[0,1,1,0],[1,1,0,0],[0,0,0,0]],
+];
+
+const START_X = COLS / 2 - TETRO_SIZE / 2;
+const START_Y = 0;
+
+let can = document.getElementById("can");
+let con = can.getContext("2d");
+let score = 0, level = 1, best = localStorage.getItem("best") || 0;
+let tetro = null, tetro_t = 0, x = START_X, y = START_Y;
+let field = [];
+let bag = [], over = false, timer = null;
+
+function startGame() {
+  document.getElementById("start-screen").style.display = "none";
+  init();
+  draw();
+  timer = setInterval(drop, GAME_SPEED);
+}
+
+function restartGame() {
+  clearInterval(timer);
+  score = 0;
+  level = 1;
+  document.getElementById("score").textContent = "SCORE: 0";
+  document.getElementById("level").textContent = "LEVEL: 1";
+  over = false;
+  init();
+  draw();
+  timer = setInterval(drop, GAME_SPEED);
+}
+
+function init() {
+  field = Array.from({length: ROWS}, () => Array(COLS).fill(0));
+  refill();
+  next();
+}
+
+function refill() {
+  bag = [1,2,3,4,5,6,7];
+  for (let i = bag.length - 1; i > 0; i--) {
+    let j = Math.floor(Math.random() * (i+1));
+    [bag[i], bag[j]] = [bag[j], bag[i]];
+  }
+}
+
+function next() {
+  if (bag.length === 0) refill();
+  tetro_t = bag.pop();
+  tetro = TYPES[tetro_t];
+  x = START_X;
+  y = START_Y;
+}
+
+function draw() {
+  con.clearRect(0,0,COLS*BLOCK,ROWS*BLOCK);
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      if (field[r][c]) block(c,r,COLORS[field[r][c]]);
+    }
+  }
+  drawGhost();
+  for (let r = 0; r < TETRO_SIZE; r++) {
+    for (let c = 0; c < TETRO_SIZE; c++) {
+      if (tetro[r][c]) block(x+c,y+r,COLORS[tetro_t]);
+    }
+  }
+}
+
+function drawGhost() {
+  let ghostY = y;
+  while (check(0, 1, tetro, ghostY)) ghostY++;
+  for (let r = 0; r < TETRO_SIZE; r++) {
+    for (let c = 0; c < TETRO_SIZE; c++) {
+      if (tetro[r][c]) block(x + c, ghostY + r, "#888");
+    }
+  }
+}
+
+function block(x, y, color) {
+  con.fillStyle = color;
+  con.fillRect(x*BLOCK,y*BLOCK,BLOCK,BLOCK);
+  con.strokeStyle = "black";
+  con.strokeRect(x*BLOCK,y*BLOCK,BLOCK,BLOCK);
+}
+
+function check(dx, dy, shape = tetro, testY = y) {
+  for (let r = 0; r < TETRO_SIZE; r++) {
+    for (let c = 0; c < TETRO_SIZE; c++) {
+      if (!shape[r][c]) continue;
+      let nx = x + dx + c;
+      let ny = testY + dy + r;
+      if (ny >= ROWS || nx < 0 || nx >= COLS || field[ny]?.[nx]) return false;
+    }
+  }
+  return true;
+}
+
+function drop() {
+  if (over) return;
+  if (check(0,1)) y++;
+  else {
+    for (let r = 0; r < TETRO_SIZE; r++) {
+      for (let c = 0; c < TETRO_SIZE; c++) {
+        if (tetro[r][c]) field[y+r][x+c] = tetro_t;
+      }
+    }
+    clear();
+    next();
+    if (!check(0,0)) {
+      over = true;
+      if (score > best) {
+        best = score;
+        localStorage.setItem("best", best);
+      }
+      document.getElementById("record").textContent = "BEST: " + best;
+      alert("게임 오버!\n점수: " + score);
+    }
+  }
+  draw();
+}
+
+function clear() {
+  for (let r = ROWS-1; r >= 0; r--) {
+    if (field[r].every(v => v !== 0)) {
+      field.splice(r,1);
+      field.unshift(Array(COLS).fill(0));
+      score++;
+      document.getElementById("score").textContent = "SCORE: " + score;
+      if (score % 3 === 0) {
+        level++;
+        document.getElementById("level").textContent = "LEVEL: " + level;
+        clearInterval(timer);
+        GAME_SPEED = Math.max(100, 600 - (level - 1) * SPEED_STEP);
+        timer = setInterval(drop, GAME_SPEED);
+      }
+      r++;
+    }
+  }
+}
+
+function rotate() {
+  let t = Array.from({length:TETRO_SIZE},()=>Array(TETRO_SIZE).fill(0));
+  for (let r=0;r<TETRO_SIZE;r++) for(let c=0;c<TETRO_SIZE;c++) t[r][c]=tetro[TETRO_SIZE-c-1][r];
+  if (check(0,0,t)) tetro = t;
+}
+
+function moveLeft()  { if (!over && check(-1,0)) x--; draw(); }
+function moveRight() { if (!over && check(1,0)) x++; draw(); }
+function moveDown()  { if (!over && check(0,1)) y++; draw(); }
+function moveUp()    { rotate(); draw(); }
+
+document.onkeydown = function(e) {
+  if (over) return;
+  switch (e.keyCode) {
+    case 37: moveLeft();  e.preventDefault(); break;
+    case 39: moveRight(); e.preventDefault(); break;
+    case 40: moveDown();  e.preventDefault(); break;
+    case 32: moveUp();    e.preventDefault(); break;
+  }
+};
+
+window.addEventListener("blur", () => {
+  document.body.focus();
+});
+</script>
+
+</body>
+</html>
